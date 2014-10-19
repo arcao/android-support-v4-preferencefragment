@@ -12,20 +12,29 @@ buildscript {
 apply plugin: 'com.android.library'
 apply plugin: 'maven'
 
-version = VERSION
-group = GROUP
+version = MVN_VERSION
+group = MVN_GROUP
+
+configurations {
+    deployerJars
+}
+
+repositories {
+    mavenCentral()
+}
 
 dependencies {
     compile 'com.android.support:support-v4:21.0.0'
+    deployerJars "org.apache.maven.wagon:wagon-ftp:2.2"
 }
 
 android {
-    compileSdkVersion 21
-    buildToolsVersion '21.0.1'
+    compileSdkVersion 19
+    buildToolsVersion '20.0.0'
 
     defaultConfig {
         minSdkVersion 7
-        targetSdkVersion 21
+        targetSdkVersion 19
     }
 
     sourceSets {
@@ -41,12 +50,60 @@ android {
     }
 }
 
-uploadArchives {
-    repositories.mavenDeployer {
-        repository(url: "file:maven-repository/")
+afterEvaluate { project ->
+    def user = null
+    def repo = null
+    'git remote -v'.execute([], project.projectDir).getText().find('git@github.com:(.+?)/(.+).git') {
+        match ->
+            user = match[1]
+            repo = match[2]
+    }
+    def githubPage = "https://github.com/${user}/${repo}/";
 
-        pom.groupId = GROUP
-        pom.artifactId = ARTIFACT_ID
-        pom.version = VERSION
+    uploadArchives {
+        repositories.mavenDeployer {
+            configuration = configurations.deployerJars
+            repository(url: MVN_REPOSITORY_UPLOAD_URL) {
+                authentication(userName: MVN_REPOSITORY_UPLOAD_USER, password: MVN_REPOSITORY_UPLOAD_PASSWORD)
+            }
+
+            pom.groupId = MVN_GROUP
+            pom.artifactId = MVN_ARTIFACT_ID
+            pom.version = MVN_VERSION
+
+            pom.project {
+                name repo
+                packaging 'jar'
+                url githubPage
+                
+                scm {
+                    url githubPage
+                    connection githubPage
+                }
+
+            }
+        }
+    }
+
+    task androidJavadocs(type: Javadoc) {
+        source android.sourceSets.main.java.srcDirs
+    }
+
+    task androidJavadocsJar(type: Jar) {
+        classifier = 'javadoc'
+        baseName MVN_ARTIFACT_ID
+        from androidJavadocs.destinationDir
+    }
+
+    task androidSourcesJar(type: Jar) {
+        classifier = 'sources'
+        baseName MVN_ARTIFACT_ID
+        from android.sourceSets.main.java.srcDirs
+    }
+
+    artifacts {
+        archives packageReleaseJar
+        archives androidSourcesJar
+        archives androidJavadocsJar
     }
 }
